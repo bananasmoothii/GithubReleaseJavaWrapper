@@ -9,11 +9,13 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlinx.serialization.UseSerializers
 import org.kohsuke.github.GHRelease
 import org.kohsuke.github.GitHub
 import java.nio.file.Path
-import java.nio.file.StandardOpenOption.*
+import java.nio.file.StandardOpenOption.CREATE
+import java.nio.file.StandardOpenOption.TRUNCATE_EXISTING
 import kotlin.io.path.*
 
 fun main() = runBlocking {
@@ -40,26 +42,37 @@ fun main() = runBlocking {
 
 suspend fun downloadAssets(release: GHRelease) = coroutineScope {
     for (download in config.downloads) launch {
-        val jarAsset = release.listAssets()
-            .firstOrNull { download.fileRegex matches it.name }
-            ?: throw IllegalStateException("No asset found matching ${download.fileRegex}")
-
-        if (jarAsset.id == idFile.readText().toLong()) {
-            printlnIfNotQuiet { "Asset already downloaded" }
-        } else {
-            printlnIfNotQuiet { "Downloading asset" }
-            val response: Response = get(
-                jarAsset.browserDownloadUrl,
-                headers = mapOf("Authorization" to "token ${config.githubToken}")
-            )
-            if (response.statusCode == 200) {
-                download.copyFileAt.outputStream(CREATE, TRUNCATE_EXISTING).use {
-                    response.raw.copyTo(it)
+        var foundAsset = false
+        for (asset in release.listAssets()) {
+            download.matcher = download.fileRegex.matchEntire(asset.name)
+            if (download.matcher != null) {
+                foundAsset = true
+                try {
+                    if (asset.id == idFile.readText().toLong()) {
+                        printlnIfNotQuiet { "Asset already downloaded" }
+                    } else {
+                        printlnIfNotQuiet { "Downloading asset" }
+                        val response: Response = get(
+                            asset.browserDownloadUrl,
+                            headers = mapOf("Authorization" to "token ${config.githubToken}")
+                        )
+                        if (response.statusCode == 200) {
+                            Path.of(download.copyFileAt.dollarReplace(download.matcher!!)).outputStream(CREATE, TRUNCATE_EXISTING).use {
+                                response.raw.copyTo(it)
+                            }
+                            printlnIfNotQuiet { "Asset downloaded" }
+                        } else {
+                            System.err.println("Error while downloading asset: ${response.statusCode} ${response.text}")
+                        }
+                    }
+                } catch (e: Throwable) {
+                    System.err.println("Error while downloading asset")
+                    e.printStackTrace()
                 }
-                printlnIfNotQuiet { "Asset downloaded" }
-            } else {
-                System.err.println("Error while downloading asset: ${response.statusCode} ${response.text}")
             }
+        }
+        if (!foundAsset) {
+            System.err.println("No asset found for download matching ${download.fileRegex}")
         }
     }
 }
@@ -67,8 +80,9 @@ suspend fun downloadAssets(release: GHRelease) = coroutineScope {
 fun runJars() {
     for (download in config.downloads) {
         if (download.onDownloadFinish == null) continue
-        printlnIfNotQuiet("Running ${download.copyFileAt.fileName}")
-        ProcessBuilder(download.onDownloadFinish).start()
+        val command = download.onDownloadFinish.dollarReplace(download.matcher!!)
+        printlnIfNotQuiet("Running $command")
+        ProcessBuilder(command).start()
     }
 }
 
@@ -86,13 +100,22 @@ data class Config(
 @Serializable
 data class Download(
     val fileRegex: Regex,
-    val copyFileAt: Path,
+    val copyFileAt: String,
     val onDownloadFinish: String? = null,
-)
+) {
+    @Transient
+    var matcher: MatchResult? = null
+}
 
 val configFile: Path = Path.of("GithubReleaseJavaWrapper.yml")
 
 val idFile: Path = Path.of(".GithubReleaseJavaWrapper_current_release_id.txt")
+
+val dollarReplaceRegex = Regex("(?<!\\\\)\\$((\\d+)|\\{(\\d+)})")
+
+fun String.dollarReplace(matcher: MatchResult) = dollarReplaceRegex.replace(this) {
+    matcher.groups[(it.groups[2] ?: it.groups[3] ?: throw IllegalStateException("No group found")).value.toInt()]!!.value
+}
 
 fun printlnIfNotQuiet(s: String) {
     if (!config.quiet) println(s)
