@@ -1,0 +1,23 @@
+# GitHub Release Java Wrapper configuration file
+
+# GitHub repository in the form of owner/repository (e.g. 'bananasmoothii/GithubReleaseJavaWrapper')
+githubRepo: ''
+
+# GitHub API token (can be left blank if not needed)
+githubToken: ''
+
+downloads:
+  -   # Here we are taking the first asset ending in .jar
+    fileRegex: '(.+)\.jar'
+
+    # Use ${group} to use match group from the above regex. Example: 'build-$1/server.jar'
+    copyFileAt: 'server.jar'
+
+    # run this file as a jar file after downloading it
+    onDownloadFinish: 'java -jar server.jar'
+
+  #- fileRegex: 'something.jar'
+  #  copyFileAt: 'something.jar'
+
+# if true, this will print only error messages
+quiet: false
