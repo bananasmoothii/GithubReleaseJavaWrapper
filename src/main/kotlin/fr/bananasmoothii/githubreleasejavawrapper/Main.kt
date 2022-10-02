@@ -12,6 +12,7 @@ import kotlinx.serialization.Transient
 import kotlinx.serialization.UseSerializers
 import org.kohsuke.github.GHRelease
 import org.kohsuke.github.GitHub
+import java.io.File
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -47,25 +48,34 @@ suspend fun downloadAssets(release: GHRelease) = coroutineScope {
     for (download in config.downloads) launch(Dispatchers.IO) {
         var foundAsset = false
         for (asset in release.listAssets()) {
-            download.matcher = download.fileRegex.matchEntire(asset.name)
-            if (download.matcher != null) {
+            val matcher = download.fileRegex.matchEntire(asset.name)
+            if (matcher != null) {
                 foundAsset = true
+                download.matcher = matcher
                 try {
-                    if (asset.id == idFile.let { if (it.exists()) it else null }?.readText()?.toLong()) {
+                    val file = Path.of(download.copyFileAt.dollarReplace(download.matcher!!))
+                    if (file.exists() && asset.id == idFile.let { if (it.exists()) it else null }?.readText()?.toLong()) {
                         printlnIfNotQuiet("Asset already downloaded")
                     } else {
-                        printlnIfNotQuiet("Downloading asset")
+                        printlnIfNotQuiet("Downloading asset...")
                         httpClient.send(
-                            HttpRequest.newBuilder(URI.create(asset.browserDownloadUrl))
+                            HttpRequest.newBuilder(asset.url.toURI())
                                 .header("Authorization", "token ${config.githubToken}")
+                                .header("Accept", "application/octet-stream")
                                 .GET()
                                 .build(),
-                            BodyHandlers.ofFile(
-                                Path.of(download.copyFileAt.dollarReplace(download.matcher!!)),
-                                CREATE,
-                                TRUNCATE_EXISTING
-                            )
-                        )
+                            BodyHandlers.ofString()
+                        ).also { println(it.body()) }.headers().also { println(it) }.firstValue("location").get()
+                            .let {
+                                httpClient.send(
+                                    HttpRequest.newBuilder(URI(it))
+                                        .header("Authorization", "token ${config.githubToken}")
+                                        .header("Accept", "application/octet-stream")
+                                        .GET()
+                                        .build(),
+                                    BodyHandlers.ofFile(file)
+                                )
+                            }
                         idFile.writeText(asset.id.toString(), options = arrayOf(CREATE, TRUNCATE_EXISTING))
                         printlnIfNotQuiet("Asset downloaded")
                     }
@@ -74,6 +84,7 @@ suspend fun downloadAssets(release: GHRelease) = coroutineScope {
                     e.printStackTrace()
                 }
             }
+            break
         }
         if (!foundAsset) {
             System.err.println("No asset found for download matching ${download.fileRegex}")
@@ -86,7 +97,10 @@ fun runJars() {
         if (download.onDownloadFinish == null) continue
         val command = download.onDownloadFinish.dollarReplace(download.matcher!!)
         printlnIfNotQuiet("Running $command")
-        ProcessBuilder(command).start()
+        ProcessBuilder(command.substringBefore(" "), *command.substringAfter(" ").split(" ").toTypedArray())
+            .directory(File("."))
+            .inheritIO()
+            .start()
     }
 }
 

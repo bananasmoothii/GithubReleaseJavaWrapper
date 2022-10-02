@@ -14,7 +14,7 @@ downloads:
     copyFileAt: 'server.jar'
 
     # run this file as a jar file after downloading it. You can also use match group results here.
-    onDownloadFinish: 'java -jar server.jar'
+    onDownloadFinish: 'java -jar ./server.jar'
 
   #- fileRegex: 'something.jar'
   #  copyFileAt: 'something.jar'
