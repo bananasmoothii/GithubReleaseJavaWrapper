@@ -3,8 +3,7 @@
 package fr.bananasmoothii.githubreleasejavawrapper
 
 import com.charleskorn.kaml.Yaml
-import khttp.get
-import khttp.responses.Response
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -13,6 +12,10 @@ import kotlinx.serialization.Transient
 import kotlinx.serialization.UseSerializers
 import org.kohsuke.github.GHRelease
 import org.kohsuke.github.GitHub
+import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse.BodyHandlers
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption.CREATE
 import java.nio.file.StandardOpenOption.TRUNCATE_EXISTING
@@ -41,29 +44,30 @@ fun main() = runBlocking {
 }
 
 suspend fun downloadAssets(release: GHRelease) = coroutineScope {
-    for (download in config.downloads) launch {
+    for (download in config.downloads) launch(Dispatchers.IO) {
         var foundAsset = false
         for (asset in release.listAssets()) {
             download.matcher = download.fileRegex.matchEntire(asset.name)
             if (download.matcher != null) {
                 foundAsset = true
                 try {
-                    if (asset.id == idFile.readText().toLong()) {
-                        printlnIfNotQuiet { "Asset already downloaded" }
+                    if (asset.id == idFile.let { if (it.exists()) it else null }?.readText()?.toLong()) {
+                        printlnIfNotQuiet("Asset already downloaded")
                     } else {
-                        printlnIfNotQuiet { "Downloading asset" }
-                        val response: Response = get(
-                            asset.browserDownloadUrl,
-                            headers = mapOf("Authorization" to "token ${config.githubToken}")
+                        printlnIfNotQuiet("Downloading asset")
+                        httpClient.send(
+                            HttpRequest.newBuilder(URI.create(asset.browserDownloadUrl))
+                                .header("Authorization", "token ${config.githubToken}")
+                                .GET()
+                                .build(),
+                            BodyHandlers.ofFile(
+                                Path.of(download.copyFileAt.dollarReplace(download.matcher!!)),
+                                CREATE,
+                                TRUNCATE_EXISTING
+                            )
                         )
-                        if (response.statusCode == 200) {
-                            Path.of(download.copyFileAt.dollarReplace(download.matcher!!)).outputStream(CREATE, TRUNCATE_EXISTING).use {
-                                response.raw.copyTo(it)
-                            }
-                            printlnIfNotQuiet { "Asset downloaded" }
-                        } else {
-                            System.err.println("Error while downloading asset: ${response.statusCode} ${response.text}")
-                        }
+                        idFile.writeText(asset.id.toString(), options = arrayOf(CREATE, TRUNCATE_EXISTING))
+                        printlnIfNotQuiet("Asset downloaded")
                     }
                 } catch (e: Throwable) {
                     System.err.println("Error while downloading asset")
@@ -92,7 +96,6 @@ lateinit var config: Config
 data class Config(
     val githubRepo: String,
     val githubToken: String,
-    val startCommand: String,
     val downloads: List<Download>,
     val quiet: Boolean = false,
 )
@@ -106,6 +109,8 @@ data class Download(
     @Transient
     var matcher: MatchResult? = null
 }
+
+val httpClient = HttpClient.newBuilder().build()
 
 val configFile: Path = Path.of("GithubReleaseJavaWrapper.yml")
 

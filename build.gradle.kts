@@ -12,7 +12,6 @@ version = "1.0"
 
 repositories {
     mavenCentral()
-    maven("https://jcenter.bintray.com/")
 }
 
 dependencies {
@@ -24,8 +23,6 @@ dependencies {
     implementation("com.charleskorn.kaml:kaml:0.47.0")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.6.4")
-
-    implementation("khttp:khttp:1.0.0")
 }
 
 tasks.test {
