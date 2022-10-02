@@ -1,4 +1,4 @@
-@file:UseSerializers(RegexSerializer::class, PathSerializer::class)
+@file:UseSerializers(RegexSerializer::class)
 
 package fr.bananasmoothii.githubreleasejavawrapper
 
@@ -124,7 +124,7 @@ data class Download(
     var matcher: MatchResult? = null
 }
 
-val httpClient = HttpClient.newBuilder().build()
+val httpClient: HttpClient = HttpClient.newBuilder().build()
 
 val configFile: Path = Path.of("GithubReleaseJavaWrapper.yml")
 
