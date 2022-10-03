@@ -105,6 +105,7 @@ fun runJars() {
             .directory(File("."))
             .inheritIO()
             .start()
+            .waitFor()
     }
 }
 
