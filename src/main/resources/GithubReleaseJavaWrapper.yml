@@ -1,13 +1,14 @@
 # GitHub Release Java Wrapper configuration file
 
-# GitHub repository in the form of owner/repository (e.g. 'bananasmoothii/GithubReleaseJavaWrapper')
-githubRepo: ''
-
 # GitHub API token (can be left blank if not needed)
 githubToken: ''
 
 downloads:
-  -   # Here we are taking the first asset ending in .jar
+
+  - # GitHub repository in the form of owner/repository (e.g. 'bananasmoothii/GithubReleaseJavaWrapper')
+    githubRepo: ''
+
+    # Here we are taking the first asset ending in .jar
     fileRegex: '(.+)\.jar'
 
     # Use ${group} to use match group from the above regex. Example: 'build-$1/server.jar' ( ${1} with curly braces also works)
@@ -15,6 +16,9 @@ downloads:
 
     # run this file as a jar file after downloading it. You can also use match group results here.
     onDownloadFinish: 'java -jar ./server.jar'
+
+    # This is the same as above, but in array form. Useful when dealing with spaces in arguments.
+    # onDownloadFinishArgs: ['java', '-jar', './server.jar']
 
   #- fileRegex: 'something.jar'
   #  copyFileAt: 'something.jar'

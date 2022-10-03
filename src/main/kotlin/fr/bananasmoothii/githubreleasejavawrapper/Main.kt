@@ -10,7 +10,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.UseSerializers
-import org.kohsuke.github.GHRelease
 import org.kohsuke.github.GitHub
 import java.io.File
 import java.net.URI
@@ -32,21 +31,22 @@ fun main() = runBlocking {
     }
     config = Yaml.default.decodeFromStream(Config.serializer(), configFile.inputStream())
 
-    val github = GitHub.connectUsingOAuth(config.githubToken)
+    val github: GitHub = if (config.githubToken.isNotBlank()) GitHub.connectUsingOAuth(config.githubToken) else GitHub.connectAnonymously()
 
-    val release = github.getRepository(config.githubRepo).listReleases()
-        .maxBy { it.published_at } ?: throw IllegalStateException("No release found")
-
-    printlnIfNotQuiet { "Using release ${release.name} published at ${release.published_at} Tag: ${release.tagName}\n${release.body}" }
-
-    downloadAssets(release)
+    downloadAssets(github)
 
     runJars()
 }
 
-suspend fun downloadAssets(release: GHRelease) = coroutineScope {
+suspend fun downloadAssets(github: GitHub) = coroutineScope {
     for (download in config.downloads) launch(Dispatchers.IO) {
         var foundAsset = false
+
+        val release = github.getRepository(download.githubRepo).listReleases()
+            .maxBy { it.published_at } ?: throw IllegalStateException("No release found")
+
+        printlnIfNotQuiet { "Using release ${release.name} published at ${release.published_at} Tag: ${release.tagName}\n${release.body}" }
+
         for (asset in release.listAssets()) {
             val matcher = download.fileRegex.matchEntire(asset.name)
             if (matcher != null) {
@@ -65,7 +65,7 @@ suspend fun downloadAssets(release: GHRelease) = coroutineScope {
                                 .GET()
                                 .build(),
                             BodyHandlers.ofString()
-                        ).also { println(it.body()) }.headers().also { println(it) }.firstValue("location").get()
+                        ).headers().firstValue("location").get()
                             .let {
                                 httpClient.send(
                                     HttpRequest.newBuilder(URI(it))
@@ -95,9 +95,13 @@ suspend fun downloadAssets(release: GHRelease) = coroutineScope {
 fun runJars() {
     for (download in config.downloads) {
         if (download.onDownloadFinish == null) continue
-        val command = download.onDownloadFinish.dollarReplace(download.matcher!!)
+        val command =
+            if (download.onDownloadFinish.isBlank()) mutableListOf()
+            else download.onDownloadFinish.dollarReplace(download.matcher!!).split(" ").toMutableList()
+        download.onDownloadFinishArgs.mapTo(command) { it.dollarReplace(download.matcher!!) }
         printlnIfNotQuiet("Running $command")
-        ProcessBuilder(command.substringBefore(" "), *command.substringAfter(" ").split(" ").toTypedArray())
+        ProcessBuilder("java")
+        ProcessBuilder(command)
             .directory(File("."))
             .inheritIO()
             .start()
@@ -108,7 +112,6 @@ lateinit var config: Config
 
 @Serializable
 data class Config(
-    val githubRepo: String,
     val githubToken: String,
     val downloads: List<Download>,
     val quiet: Boolean = false,
@@ -116,9 +119,11 @@ data class Config(
 
 @Serializable
 data class Download(
+    val githubRepo: String,
     val fileRegex: Regex,
     val copyFileAt: String,
     val onDownloadFinish: String? = null,
+    val onDownloadFinishArgs: List<String> = emptyList(),
 ) {
     @Transient
     var matcher: MatchResult? = null
@@ -130,10 +135,10 @@ val configFile: Path = Path.of("GithubReleaseJavaWrapper.yml")
 
 val idFile: Path = Path.of(".GithubReleaseJavaWrapper_current_release_id.txt")
 
-val dollarReplaceRegex = Regex("(?<!\\\\)\\$((\\d+)|\\{(\\d+)})")
+val dollarReplaceRegex = Regex("((?<!\\\\)(?:\\\\\\\\)*)\\$((\\d+)|\\{(\\d+)})")
 
 fun String.dollarReplace(matcher: MatchResult) = dollarReplaceRegex.replace(this) {
-    matcher.groups[(it.groups[2] ?: it.groups[3] ?: throw IllegalStateException("No group found")).value.toInt()]!!.value
+    it.groupValues[1] + matcher.groups[(it.groups[3] ?: it.groups[4] ?: throw IllegalStateException("No group found")).value.toInt()]!!.value
 }
 
 fun printlnIfNotQuiet(s: String) {
