@@ -99,7 +99,7 @@ fun runJars() {
             if (download.onDownloadFinish.isBlank()) mutableListOf()
             else download.onDownloadFinish.dollarReplace(download.matcher!!).split(" ").toMutableList()
         download.onDownloadFinishArgs.mapTo(command) { it.dollarReplace(download.matcher!!) }
-        printlnIfNotQuiet("Running $command")
+        printlnIfNotQuiet { "Running ${command.joinToString(" ")}" }
         ProcessBuilder("java")
         ProcessBuilder(command)
             .directory(File("."))
