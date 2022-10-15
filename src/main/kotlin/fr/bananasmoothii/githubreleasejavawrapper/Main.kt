@@ -31,7 +31,8 @@ fun main() = runBlocking {
     }
     config = Yaml.default.decodeFromStream(Config.serializer(), configFile.inputStream())
 
-    val github: GitHub = if (config.githubToken.isNotBlank()) GitHub.connectUsingOAuth(config.githubToken) else GitHub.connectAnonymously()
+    val github: GitHub =
+        if (config.githubToken.isNotBlank()) GitHub.connectUsingOAuth(config.githubToken) else GitHub.connectAnonymously()
 
     downloadAssets(github)
 
@@ -54,7 +55,9 @@ suspend fun downloadAssets(github: GitHub) = coroutineScope {
                 download.matcher = matcher
                 try {
                     val file = Path.of(download.copyFileAt.dollarReplace(download.matcher!!))
-                    if (file.exists() && asset.id == idFile.let { if (it.exists()) it else null }?.readText()?.toLong()) {
+                    if (file.exists() && asset.id == idFile.let { if (it.exists()) it else null }?.readText()
+                            ?.toLong()
+                    ) {
                         printlnIfNotQuiet("Asset already downloaded")
                     } else {
                         printlnIfNotQuiet("Downloading asset...")
@@ -79,12 +82,12 @@ suspend fun downloadAssets(github: GitHub) = coroutineScope {
                         idFile.writeText(asset.id.toString(), options = arrayOf(CREATE, TRUNCATE_EXISTING))
                         printlnIfNotQuiet("Asset downloaded")
                     }
+                    break
                 } catch (e: Throwable) {
                     System.err.println("Error while downloading asset")
                     e.printStackTrace()
                 }
             }
-            break
         }
         if (!foundAsset) {
             System.err.println("No asset found for download matching ${download.fileRegex}")
@@ -97,7 +100,9 @@ fun runJars() {
         if (download.onDownloadFinish == null) continue
         val command =
             if (download.onDownloadFinish.isBlank()) mutableListOf()
-            else download.onDownloadFinish.dollarReplace(download.matcher!!).split(" ").toMutableList()
+            else (download.matcher?.let { download.onDownloadFinish.dollarReplace(it) }
+                ?: download.onDownloadFinish)
+                .split(" ").toMutableList()
         download.onDownloadFinishArgs.mapTo(command) { it.dollarReplace(download.matcher!!) }
         printlnIfNotQuiet { "Running ${command.joinToString(" ")}" }
         ProcessBuilder("java")
@@ -139,7 +144,8 @@ val idFile: Path = Path.of(".GithubReleaseJavaWrapper_current_release_id.txt")
 val dollarReplaceRegex = Regex("((?<!\\\\)(?:\\\\\\\\)*)\\$((\\d+)|\\{(\\d+)})")
 
 fun String.dollarReplace(matcher: MatchResult) = dollarReplaceRegex.replace(this) {
-    it.groupValues[1] + matcher.groups[(it.groups[3] ?: it.groups[4] ?: throw IllegalStateException("No group found")).value.toInt()]!!.value
+    it.groupValues[1] + matcher.groups[(it.groups[3] ?: it.groups[4]
+    ?: throw IllegalStateException("No group found")).value.toInt()]!!.value
 }
 
 fun printlnIfNotQuiet(s: String) {
