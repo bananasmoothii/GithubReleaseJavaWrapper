@@ -9,4 +9,4 @@ Run this once to create the config file. Then, just follow the instructions insi
 
 Remember that every argument passes to `GitHubReleaseJavaWrapper.jar` is ignored ! Set them in the config instead.
 
-See [GithubReleaseJavaWrapper.java](src/main/resources/GithubReleaseJavaWrapper.yml)
+See [GithubReleaseJavaWrapper.yml](src/main/resources/GithubReleaseJavaWrapper.yml)
